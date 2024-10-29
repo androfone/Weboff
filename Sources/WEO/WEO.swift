@@ -1,14 +1,18 @@
 import Foundation
 import SwiftData
-
+import Cache
 
 public class WEO {
     private let storage: Storage<String, String>?
-    
+
     public init() {
         let diskConfig = DiskConfig(name: "WeboffCache", expiry: .date(Date().addingTimeInterval(60*60*24*7)))
         let memoryConfig = MemoryConfig(expiry: .never)
-        self.storage = try? Storage<String, String>(diskConfig: diskConfig, memoryConfig: memoryConfig, transformer: TransformerFactory.forCodable(ofType: String.self))
+        do {
+            self.storage = try Storage<String, String>(diskConfig: diskConfig, memoryConfig: memoryConfig, transformer: TransformerFactory.forCodable(ofType: String.self))
+        } catch {
+            self.storage = nil 
+        }
     }
     
     public func deepHTMLScan(url: URL, completion: @escaping (Result<String, Error>) -> Void) {
@@ -137,7 +141,7 @@ public class WEO {
     
     public func compressAndSaveContent(content: String) -> Data {
         guard let data = content.data(using: .utf8) else { return Data() }
-        return (try? (data as NSData).compressed(using: .lzfse)) ?? data
+        return (try? data.compressed(using: .lzfse)) ?? data
     }
     
     public func generateSavedPagesIndex() -> String {
