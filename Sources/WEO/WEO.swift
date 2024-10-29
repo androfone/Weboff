@@ -1,6 +1,6 @@
 import Foundation
 import SwiftData
-import Compress
+
 
 public class WEO {
     private let storage: Storage<String, String>?
