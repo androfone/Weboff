@@ -1,12 +1,12 @@
 import Foundation
-
+@available(iOS 13.0, *)
 public class WEO {
     private let cacheDirectory: URL?
     
     public init() {
         cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
     }
-    
+    @available(iOS 13.0, *)
     public func deepHTMLScan(url: URL, completion: @escaping (Result<String, Error>) -> Void) {
         guard url.scheme == "https" else {
             completion(.failure(NSError(domain: "WeboffError", code: 401, userInfo: [NSLocalizedDescriptionKey: "Apenas URLs HTTPS são permitidas."])))
@@ -27,7 +27,7 @@ public class WEO {
             completion(.success(updatedHTML))
         }.resume()
     }
-    
+    @available(iOS 13.0, *)
     public func startTracking(url: URL, completion: @escaping (Result<Void, Error>) -> Void) {
         deepHTMLScan(url: url) { result in
             switch result {
@@ -39,7 +39,7 @@ public class WEO {
             }
         }
     }
-    
+    @available(iOS 13.0, *)
     private func extractLinks(from html: String) -> [URL] {
         let pattern = "href=[\"'](http[s]?://[^\"']+)[\"']"
         var links = [URL]()
@@ -54,7 +54,7 @@ public class WEO {
         }
         return links
     }
-    
+    @available(iOS 13.0, *)
     private func trackLinks(links: [URL], completion: @escaping (Result<Void, Error>) -> Void) {
         let group = DispatchGroup()
         var errors: [Error] = []
@@ -81,12 +81,12 @@ public class WEO {
             }
         }
     }
-    
+    @available(iOS 13.0, *)
     public func mergeJSWithHTML(html: String, js: String) -> String {
         let script = "<script>\(js)</script>"
         return html.replacingOccurrences(of: "</body>", with: "\(script)</body>")
     }
-    
+    @available(iOS 13.0, *)
     public func connectSavedPages(html: String) -> String {
         let pattern = "href=[\"'](.*?)[\"']"
         var connectedHTML = html
@@ -103,7 +103,7 @@ public class WEO {
         }
         return connectedHTML
     }
-    
+    @available(iOS 13.0, *)
     public func retrievePageResources(from html: String) -> [String] {
         let pattern = "(http[s]?://[^\"' ]+\\.(css|png|jpg|gif|js))"
         var resources: [String] = []
@@ -117,14 +117,14 @@ public class WEO {
         }
         return resources
     }
-    
+    @available(iOS 13.0, *)
     private func retrieveFromCache(for url: String) -> String? {
         guard let cacheDir = cacheDirectory else { return nil }
         let filePath = cacheDir.appendingPathComponent(url.replacingOccurrences(of: "/", with: "_"))
         guard let data = try? Data(contentsOf: filePath) else { return nil }
         return String(data: data, encoding: .utf8)
     }
-    
+    @available(iOS 13.0, *)
     public func saveCSS(html: String) -> String {
         let pattern = "<link rel=[\"']stylesheet[\"'] href=[\"'](.*?)[\"'][^>]*>"
         var updatedHTML = html
@@ -141,12 +141,12 @@ public class WEO {
         }
         return updatedHTML
     }
-    
+    @available(iOS 13.0, *)
     private func downloadContent(from url: String) -> String? {
         guard let dataURL = URL(string: url) else { return nil }
         return try? String(contentsOf: dataURL)
     }
-    
+    @available(iOS 13.0, *)
     public func updateLinksToLocal(_ html: String) -> String {
         let pattern = "href=[\"'](http[s]?://[^\"']+)[\"']"
         var updatedHTML = html
@@ -161,7 +161,7 @@ public class WEO {
         }
         return updatedHTML
     }
-    
+    @available(iOS 13.0, *)
     public func saveMediaContent(html: String) -> [String] {
         let pattern = "<img[^>]+src=[\"']([^\"']+)\""
         var mediaResources = [String]()
@@ -178,7 +178,7 @@ public class WEO {
     
     public func compressAndSaveContent(content: String) {
     }
-    
+    @available(iOS 13.0, *)
     public func checkForUpdates(url: URL) -> Bool {
         guard let cacheDir = cacheDirectory else { return false }
         let filePath = cacheDir.appendingPathComponent(url.lastPathComponent)
