@@ -10,7 +10,7 @@ Samuel Campos de Andrade
 
 ## License
 
-MyLibrary is available under the MIT license. See the LICENSE file for more info.
+WEO is available under the MIT license. See the LICENSE file for more info.
 
 ### Example Code
 
