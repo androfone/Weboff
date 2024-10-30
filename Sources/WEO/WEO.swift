@@ -70,7 +70,7 @@ public class WEO {
             deepHTMLScan(url: link) { result in
                 switch result {
                 case .success(let html):
-                    self.saveHTMLContent(url: link, html: html) // Salvar conteúdo HTML
+                    self.saveHTMLContent(url: link, html: html) 
                     let nestedLinks = self.extractLinks(from: html)
                     self.trackLinks(links: nestedLinks, completion: { _ in })
                 case .failure(let error):
@@ -142,7 +142,7 @@ public class WEO {
         let filePath = cacheDir.appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: "/", with: "_"))
         do {
             try html.write(to: filePath, atomically: true, encoding: .utf8)
-            print("Conteúdo HTML salvo com sucesso em \(filePath.path).")
+            
         } catch {
             print("Erro ao salvar conteúdo HTML: \(error.localizedDescription)")
         }
