@@ -16,11 +16,6 @@ public class WEO {
             return
         }
         
-        if let cachedHTML = retrieveFromCache(for: url.absoluteString) {
-            completion(.success(cachedHTML))
-            return
-        }
-
         URLSession.shared.dataTask(with: url) { data, _, error in
             if let error = error {
                 completion(.failure(error))
@@ -31,12 +26,11 @@ public class WEO {
                 return
             }
             
-            self.compressAndSaveContent(content: htmlString) // Salva o HTML comprimido
             let updatedHTML = self.updateLinksToLocal(htmlString)
             completion(.success(updatedHTML))
         }.resume()
     }
-
+    
     @available(iOS 13.0, *)
     public func startTracking(url: URL, completion: @escaping (Result<Void, Error>) -> Void) {
         deepHTMLScan(url: url) { result in
@@ -49,7 +43,7 @@ public class WEO {
             }
         }
     }
-
+    
     @available(iOS 13.0, *)
     private func extractLinks(from html: String) -> [URL] {
         let pattern = "href=[\"'](http[s]?://[^\"']+)[\"']"
@@ -65,7 +59,7 @@ public class WEO {
         }
         return links
     }
-
+    
     @available(iOS 13.0, *)
     private func trackLinks(links: [URL], completion: @escaping (Result<Void, Error>) -> Void) {
         let group = DispatchGroup()
@@ -76,6 +70,7 @@ public class WEO {
             deepHTMLScan(url: link) { result in
                 switch result {
                 case .success(let html):
+                    self.saveHTMLContent(url: link, html: html) // Salvar conteúdo HTML
                     let nestedLinks = self.extractLinks(from: html)
                     self.trackLinks(links: nestedLinks, completion: { _ in })
                 case .failure(let error):
@@ -93,13 +88,13 @@ public class WEO {
             }
         }
     }
-
+    
     @available(iOS 13.0, *)
     public func mergeJSWithHTML(html: String, js: String) -> String {
         let script = "<script>\(js)</script>"
         return html.replacingOccurrences(of: "</body>", with: "\(script)</body>")
     }
-
+    
     @available(iOS 13.0, *)
     public func connectSavedPages(html: String) -> String {
         let pattern = "href=[\"'](.*?)[\"']"
@@ -117,7 +112,7 @@ public class WEO {
         }
         return connectedHTML
     }
-
+    
     @available(iOS 13.0, *)
     public func retrievePageResources(from html: String) -> [String] {
         let pattern = "(http[s]?://[^\"' ]+\\.(css|png|jpg|gif|js))"
@@ -132,7 +127,7 @@ public class WEO {
         }
         return resources
     }
-
+    
     @available(iOS 13.0, *)
     private func retrieveFromCache(for url: String) -> String? {
         guard let cacheDir = cacheDirectory else { return nil }
@@ -140,7 +135,38 @@ public class WEO {
         guard let data = try? Data(contentsOf: filePath) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+    
+    @available(iOS 13.0, *)
+    public func saveHTMLContent(url: URL, html: String) {
+        guard let cacheDir = cacheDirectory else { return }
+        let filePath = cacheDir.appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: "/", with: "_"))
+        do {
+            try html.write(to: filePath, atomically: true, encoding: .utf8)
+            print("Conteúdo HTML salvo com sucesso em \(filePath.path).")
+        } catch {
+            print("Erro ao salvar conteúdo HTML: \(error.localizedDescription)")
+        }
+    }
 
+    @available(iOS 13.0, *)
+    public func loadHTMLContent(url: URL) -> String? {
+        guard let cacheDir = cacheDirectory else { return nil }
+        let filePath = cacheDir.appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: "/", with: "_"))
+        return try? String(contentsOf: filePath, encoding: .utf8)
+    }
+
+    @available(iOS 13.0, *)
+    public func removeCachedPage(url: URL) {
+        guard let cacheDir = cacheDirectory else { return }
+        let filePath = cacheDir.appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: "/", with: "_"))
+        do {
+            try FileManager.default.removeItem(at: filePath)
+            print("Página cache removida com sucesso: \(url).")
+        } catch {
+            print("Erro ao remover página cache: \(error.localizedDescription)")
+        }
+    }
+    
     @available(iOS 13.0, *)
     public func saveCSS(html: String) -> String {
         let pattern = "<link rel=[\"']stylesheet[\"'] href=[\"'](.*?)[\"'][^>]*>"
@@ -158,13 +184,13 @@ public class WEO {
         }
         return updatedHTML
     }
-
+    
     @available(iOS 13.0, *)
     private func downloadContent(from url: String) -> String? {
         guard let dataURL = URL(string: url) else { return nil }
         return try? String(contentsOf: dataURL)
     }
-
+    
     @available(iOS 13.0, *)
     public func updateLinksToLocal(_ html: String) -> String {
         let pattern = "href=[\"'](http[s]?://[^\"']+)[\"']"
@@ -174,46 +200,36 @@ public class WEO {
             for match in matches {
                 if let range = Range(match.range(at: 1), in: html) {
                     let link = String(html[range])
-                    updatedHTML = updatedHTML.replacingOccurrences(of: link, with: "local://\(link)")
+                    if let cachedContent = retrieveFromCache(for: link) {
+                        updatedHTML = updatedHTML.replacingOccurrences(of: link, with: "local://\(link)")
+                    }
                 }
             }
         }
         return updatedHTML
     }
-
+    
     @available(iOS 13.0, *)
-    public func saveMediaContent(html: String) -> [String] {
-        let pattern = "<img[^>]+src=[\"']([^\"']+)\""
-        var mediaResources = [String]()
-        if let regex = try? NSRegularExpression(pattern: pattern) {
-            let matches = regex.matches(in: html, range: NSRange(location: 0, length: html.utf16.count))
-            for match in matches {
-                if let range = Range(match.range(at: 1), in: html) {
-                    mediaResources.append(String(html[range]))
+    public func getPageTitle(url: URL, completion: @escaping (Result<String, Error>) -> Void) {
+        deepHTMLScan(url: url) { result in
+            switch result {
+            case .success(let html):
+                let titlePattern = "<title>(.*?)</title>"
+                if let regex = try? NSRegularExpression(pattern: titlePattern, options: .caseInsensitive) {
+                    if let match = regex.firstMatch(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count)) {
+                        if let titleRange = Range(match.range(at: 1), in: html) {
+                            let title = String(html[titleRange])
+                            completion(.success(title))
+                        } else {
+                            completion(.failure(NSError(domain: "WeboffError", code: 404, userInfo: [NSLocalizedDescriptionKey: "Título não encontrado."])))
+                        }
+                    } else {
+                        completion(.failure(NSError(domain: "WeboffError", code: 405, userInfo: [NSLocalizedDescriptionKey: "Título não encontrado."])))
+                    }
                 }
+            case .failure(let error):
+                completion(.failure(error))
             }
         }
-        return mediaResources
-    }
-
-    @available(iOS 13.0, *)
-    public func compressAndSaveContent(content: String) {
-        guard let data = content.data(using: .utf8) else { return }
-        guard let cacheDir = cacheDirectory else { return }
-        
-        let filePath = cacheDir.appendingPathComponent(content.hashValue.description) // Usando hash do conteúdo como nome do arquivo
-        
-        do {
-            let compressedData = try gzipCompress(data: data)
-            try compressedData.write(to: filePath)
-            print("Conteúdo comprimido e salvo com sucesso.")
-        } catch {
-            print("Erro ao salvar conteúdo comprimido: \(error.localizedDescription)")
-        }
-    }
-
-    private func gzipCompress(data: Data) throws -> Data {
-        let compressedData = try (data as NSData).compressed(using: .gzip)
-        return compressedData as Data
     }
 }
