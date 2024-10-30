@@ -1,4 +1,6 @@
 import Foundation
+import zlib
+
 @available(iOS 13.0, *)
 public class WEO {
     private let cacheDirectory: URL?
@@ -175,9 +177,52 @@ public class WEO {
         }
         return mediaResources
     }
-    
+    @available(iOS 13.0, *)
     public func compressAndSaveContent(content: String) {
+        guard let data = content.data(using: .utf8) else { return }
+        guard let cacheDir = cacheDirectory else { return }
+        
+        let filePath = cacheDir.appendingPathComponent("compressedContent.gz")
+        
+        do {
+            let compressedData = try gzipCompress(data: data)
+            try compressedData.write(to: filePath)
+            print("Conteúdo comprimido e salvo com sucesso.")
+        } catch {
+            print("Erro ao salvar conteúdo comprimido: \(error.localizedDescription)")
+        }
     }
+    
+    private func gzipCompress(data: Data) throws -> Data {
+        var stream = z_stream()
+        stream.avail_in = uint(data.count)
+        stream.next_in = UnsafeMutablePointer<UInt8>(mutating: (data as NSData).bytes.bindMemory(to: UInt8.self, capacity: data.count))
+        
+        var compressedData = Data()
+        let bufferSize = 4096
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        
+        defer {
+            buffer.deallocate()
+            deflateEnd(&stream)
+        }
+        
+       guard deflateInit2_(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
+            throw NSError(domain: "CompressionError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Falha ao inicializar a compressão."])
+        }
+        
+        while stream.avail_out == 0 {
+            stream.avail_out = uint(bufferSize)
+            stream.next_out = buffer
+            
+            deflate(&stream, Z_FINISH)
+            
+            compressedData.append(buffer, count: bufferSize - Int(stream.avail_out))
+        }
+        
+        return compressedData
+    }
+
     @available(iOS 13.0, *)
     public func checkForUpdates(url: URL) -> Bool {
         guard let cacheDir = cacheDirectory else { return false }
