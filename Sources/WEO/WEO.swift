@@ -8,6 +8,7 @@ public class WEO {
     public init() {
         cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
     }
+    
     @available(iOS 13.0, *)
     public func deepHTMLScan(url: URL, completion: @escaping (Result<String, Error>) -> Void) {
         guard url.scheme == "https" else {
@@ -15,6 +16,11 @@ public class WEO {
             return
         }
         
+        if let cachedHTML = retrieveFromCache(for: url.absoluteString) {
+            completion(.success(cachedHTML))
+            return
+        }
+
         URLSession.shared.dataTask(with: url) { data, _, error in
             if let error = error {
                 completion(.failure(error))
@@ -25,10 +31,12 @@ public class WEO {
                 return
             }
             
+            self.compressAndSaveContent(content: htmlString) // Salva o HTML comprimido
             let updatedHTML = self.updateLinksToLocal(htmlString)
             completion(.success(updatedHTML))
         }.resume()
     }
+
     @available(iOS 13.0, *)
     public func startTracking(url: URL, completion: @escaping (Result<Void, Error>) -> Void) {
         deepHTMLScan(url: url) { result in
@@ -41,6 +49,7 @@ public class WEO {
             }
         }
     }
+
     @available(iOS 13.0, *)
     private func extractLinks(from html: String) -> [URL] {
         let pattern = "href=[\"'](http[s]?://[^\"']+)[\"']"
@@ -56,6 +65,7 @@ public class WEO {
         }
         return links
     }
+
     @available(iOS 13.0, *)
     private func trackLinks(links: [URL], completion: @escaping (Result<Void, Error>) -> Void) {
         let group = DispatchGroup()
@@ -83,11 +93,13 @@ public class WEO {
             }
         }
     }
+
     @available(iOS 13.0, *)
     public func mergeJSWithHTML(html: String, js: String) -> String {
         let script = "<script>\(js)</script>"
         return html.replacingOccurrences(of: "</body>", with: "\(script)</body>")
     }
+
     @available(iOS 13.0, *)
     public func connectSavedPages(html: String) -> String {
         let pattern = "href=[\"'](.*?)[\"']"
@@ -105,6 +117,7 @@ public class WEO {
         }
         return connectedHTML
     }
+
     @available(iOS 13.0, *)
     public func retrievePageResources(from html: String) -> [String] {
         let pattern = "(http[s]?://[^\"' ]+\\.(css|png|jpg|gif|js))"
@@ -119,6 +132,7 @@ public class WEO {
         }
         return resources
     }
+
     @available(iOS 13.0, *)
     private func retrieveFromCache(for url: String) -> String? {
         guard let cacheDir = cacheDirectory else { return nil }
@@ -126,6 +140,7 @@ public class WEO {
         guard let data = try? Data(contentsOf: filePath) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
     @available(iOS 13.0, *)
     public func saveCSS(html: String) -> String {
         let pattern = "<link rel=[\"']stylesheet[\"'] href=[\"'](.*?)[\"'][^>]*>"
@@ -143,11 +158,13 @@ public class WEO {
         }
         return updatedHTML
     }
+
     @available(iOS 13.0, *)
     private func downloadContent(from url: String) -> String? {
         guard let dataURL = URL(string: url) else { return nil }
         return try? String(contentsOf: dataURL)
     }
+
     @available(iOS 13.0, *)
     public func updateLinksToLocal(_ html: String) -> String {
         let pattern = "href=[\"'](http[s]?://[^\"']+)[\"']"
@@ -163,6 +180,7 @@ public class WEO {
         }
         return updatedHTML
     }
+
     @available(iOS 13.0, *)
     public func saveMediaContent(html: String) -> [String] {
         let pattern = "<img[^>]+src=[\"']([^\"']+)\""
@@ -177,12 +195,13 @@ public class WEO {
         }
         return mediaResources
     }
+
     @available(iOS 13.0, *)
     public func compressAndSaveContent(content: String) {
         guard let data = content.data(using: .utf8) else { return }
         guard let cacheDir = cacheDirectory else { return }
         
-        let filePath = cacheDir.appendingPathComponent("compressedContent.gz")
+        let filePath = cacheDir.appendingPathComponent(content.hashValue.description) // Usando hash do conteúdo como nome do arquivo
         
         do {
             let compressedData = try gzipCompress(data: data)
@@ -192,44 +211,9 @@ public class WEO {
             print("Erro ao salvar conteúdo comprimido: \(error.localizedDescription)")
         }
     }
-    
-    private func gzipCompress(data: Data) throws -> Data {
-        var stream = z_stream()
-        stream.avail_in = uint(data.count)
-        stream.next_in = UnsafeMutablePointer<UInt8>(mutating: (data as NSData).bytes.bindMemory(to: UInt8.self, capacity: data.count))
-        
-        var compressedData = Data()
-        let bufferSize = 4096
-        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-        
-        defer {
-            buffer.deallocate()
-            deflateEnd(&stream)
-        }
-        
-       guard deflateInit2_(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
-            throw NSError(domain: "CompressionError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Falha ao inicializar a compressão."])
-        }
-        
-        while stream.avail_out == 0 {
-            stream.avail_out = uint(bufferSize)
-            stream.next_out = buffer
-            
-            deflate(&stream, Z_FINISH)
-            
-            compressedData.append(buffer, count: bufferSize - Int(stream.avail_out))
-        }
-        
-        return compressedData
-    }
 
-    @available(iOS 13.0, *)
-    public func checkForUpdates(url: URL) -> Bool {
-        guard let cacheDir = cacheDirectory else { return false }
-        let filePath = cacheDir.appendingPathComponent(url.lastPathComponent)
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: filePath.path),
-              let modificationDate = attributes[.modificationDate] as? Date else { return true }
-        
-        return Date().timeIntervalSince(modificationDate) > 86400
+    private func gzipCompress(data: Data) throws -> Data {
+        let compressedData = try (data as NSData).compressed(using: .gzip)
+        return compressedData as Data
     }
 }
