@@ -176,7 +176,7 @@ public class WEO {
         return mediaResources
     }
     
-    public func compressAndSaveContent(content: String) -> Data {
+    public func compressAndSaveContent(content: String) {
     }
     
     public func checkForUpdates(url: URL) -> Bool {
