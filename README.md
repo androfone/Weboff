@@ -20,9 +20,10 @@ import WebKit
 import WEO
 
 struct ContentView: View {
-    @State private var urlString: String = "https://www.google.com"
-    @State private var webView: WKWebView!
-
+    @State private var urlString: String = "https://searx.be/search?q=a&language=all&time_range=&safesearch=0&categories=general"
+    @State private var webView = WKWebView()
+    private let weo = WEO()
+    
     var body: some View {
         VStack {
             HStack {
@@ -31,48 +32,66 @@ struct ContentView: View {
                 })
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding()
-
+                
                 Button("Carregar") {
                     loadURL(urlString)
                 }
+                .foregroundColor(.blue)
                 .padding()
             }
-            .padding(.top)
-
+            
             WebView(webView: $webView)
                 .onAppear {
                     loadURL(urlString)
                 }
         }
+        .padding()
     }
-
+    
     private func loadURL(_ urlString: String) {
-        guard let url = URL(string: urlString) else { return }
-        webView.load(URLRequest(url: url))
+        guard let url = URL(string: urlString) else {
+            print("URL inválida: \(urlString)")
+            return
+        }
+        
+        if let cachedHTML = weo.loadHTMLContent(url: url) {
+            webView.loadHTMLString(cachedHTML, baseURL: url)
+            print("Carregado a partir do cache.")
+        } else {
+            let request = URLRequest(url: url)
+            webView.load(request)
+            webView.navigationDelegate = WebViewDelegate(weo: weo, url: url)
+        }
+    }
+}
 
-        let weo = WEO()
-        weo.startTracking(url: url) { result in
-            switch result {
-            case .success:
-                print("Rastreamento concluído com sucesso.")
-            case .failure(let error):
-                print("Erro no rastreamento: \(error.localizedDescription)")
+class WebViewDelegate: NSObject, WKNavigationDelegate {
+    var weo: WEO
+    var url: URL
+    
+    init(weo: WEO, url: URL) {
+        self.weo = weo
+        self.url = url
+    }
+    
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        webView.evaluateJavaScript("document.documentElement.outerHTML") { (htmlContent, error) in
+            if let html = htmlContent as? String {
+                self.weo.saveHTMLContent(url: self.url, html: html)
+                print("Conteúdo rastreado e salvo no cache.")
+            } else if let error = error {
+                print("Erro ao obter HTML: \(error.localizedDescription)")
             }
         }
     }
 }
 
 struct WebView: UIViewRepresentable {
-    @Binding var webView: WKWebView?
-
+    @Binding var webView: WKWebView
+    
     func makeUIView(context: Context) -> WKWebView {
-        let webView = WKWebView()
-        self.webView = webView
         return webView
     }
-
-    func updateUIView(_ uiView: WKWebView, context: Context) {
-
-    }
+    
+    func updateUIView(_ uiView: WKWebView, context: Context) { }
 }
-
