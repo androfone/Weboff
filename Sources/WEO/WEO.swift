@@ -1,5 +1,4 @@
 import Foundation
-import zlib
 
 @available(iOS 13.0, *)
 public class WEO {
@@ -7,6 +6,23 @@ public class WEO {
     
     public init() {
         cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    }
+    @available(iOS 13.0, *)
+    public func updateLinksToLocal(_ html: String) -> String {
+        let pattern = "href=[\"'](http[s]?://[^\"']+)[\"']"
+        var updatedHTML = html
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let matches = regex.matches(in: html, range: NSRange(location: 0, length: html.utf16.count))
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: html) {
+                    let link = String(html[range])
+                    if let cachedContent = retrieveFromCache(for: link) {
+                        updatedHTML = updatedHTML.replacingOccurrences(of: link, with: "local://\(link)")
+                    }
+                }
+            }
+        }
+        return updatedHTML
     }
     
     @available(iOS 13.0, *)
@@ -70,7 +86,11 @@ public class WEO {
             deepHTMLScan(url: link) { result in
                 switch result {
                 case .success(let html):
-                    self.saveHTMLContent(url: link, html: html) 
+                    self.saveHTMLContent(url: link, html: html)
+                    self.saveCSS(html: html)
+                    self.saveJavaScript(html: html)
+                    self.downloadImages(from: html)
+                    self.downloadVideos(from: html) 
                     let nestedLinks = self.extractLinks(from: html)
                     self.trackLinks(links: nestedLinks, completion: { _ in })
                 case .failure(let error):
@@ -84,15 +104,10 @@ public class WEO {
             if errors.isEmpty {
                 completion(.success(()))
             } else {
+                NotificationCenter.default.post(name: Notification.Name("TrackingError"), object: errors)
                 completion(.failure(NSError(domain: "WeboffError", code: 500, userInfo: [NSLocalizedDescriptionKey: "Erros durante o rastreamento: \(errors)"])))
             }
         }
-    }
-    
-    @available(iOS 13.0, *)
-    public func mergeJSWithHTML(html: String, js: String) -> String {
-        let script = "<script>\(js)</script>"
-        return html.replacingOccurrences(of: "</body>", with: "\(script)</body>")
     }
     
     @available(iOS 13.0, *)
@@ -141,30 +156,25 @@ public class WEO {
         guard let cacheDir = cacheDirectory else { return }
         let filePath = cacheDir.appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: "/", with: "_"))
         do {
-            try html.write(to: filePath, atomically: true, encoding: .utf8)
-            
-        } catch {
-            print("Erro ao salvar conteúdo HTML: \(error.localizedDescription)")
-        }
+            try html.write(to: filePath, atomically: true, encoding: .utf8) 
+        } catch {}
     }
-
+    
     @available(iOS 13.0, *)
     public func loadHTMLContent(url: URL) -> String? {
         guard let cacheDir = cacheDirectory else { return nil }
         let filePath = cacheDir.appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: "/", with: "_"))
-        return try? String(contentsOf: filePath, encoding: .utf8)
+        guard let data = try? Data(contentsOf: filePath) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
-
+    
     @available(iOS 13.0, *)
     public func removeCachedPage(url: URL) {
         guard let cacheDir = cacheDirectory else { return }
         let filePath = cacheDir.appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: "/", with: "_"))
         do {
             try FileManager.default.removeItem(at: filePath)
-            print("Página cache removida com sucesso: \(url).")
-        } catch {
-            print("Erro ao remover página cache: \(error.localizedDescription)")
-        }
+        } catch {}
     }
     
     @available(iOS 13.0, *)
@@ -177,6 +187,7 @@ public class WEO {
                 if let range = Range(match.range(at: 1), in: html) {
                     let cssLink = String(html[range])
                     if let cssContent = downloadContent(from: cssLink) {
+                        saveCSSContent(content: cssContent, for: cssLink)
                         updatedHTML = updatedHTML.replacingOccurrences(of: cssLink, with: "local://\(cssLink)")
                     }
                 }
@@ -186,22 +197,17 @@ public class WEO {
     }
     
     @available(iOS 13.0, *)
-    private func downloadContent(from url: String) -> String? {
-        guard let dataURL = URL(string: url) else { return nil }
-        return try? String(contentsOf: dataURL)
-    }
-    
-    @available(iOS 13.0, *)
-    public func updateLinksToLocal(_ html: String) -> String {
-        let pattern = "href=[\"'](http[s]?://[^\"']+)[\"']"
+    public func saveJavaScript(html: String) -> String {
+        let pattern = "<script src=[\"'](.*?)[\"'][^>]*></script>"
         var updatedHTML = html
         if let regex = try? NSRegularExpression(pattern: pattern) {
             let matches = regex.matches(in: html, range: NSRange(location: 0, length: html.utf16.count))
             for match in matches {
                 if let range = Range(match.range(at: 1), in: html) {
-                    let link = String(html[range])
-                    if let cachedContent = retrieveFromCache(for: link) {
-                        updatedHTML = updatedHTML.replacingOccurrences(of: link, with: "local://\(link)")
+                    let jsLink = String(html[range])
+                    if let jsContent = downloadContent(from: jsLink) {
+                        saveJavaScriptContent(content: jsContent, for: jsLink)
+                        updatedHTML = updatedHTML.replacingOccurrences(of: jsLink, with: "local://\(jsLink)")
                     }
                 }
             }
@@ -209,27 +215,61 @@ public class WEO {
         return updatedHTML
     }
     
-    @available(iOS 13.0, *)
-    public func getPageTitle(url: URL, completion: @escaping (Result<String, Error>) -> Void) {
-        deepHTMLScan(url: url) { result in
-            switch result {
-            case .success(let html):
-                let titlePattern = "<title>(.*?)</title>"
-                if let regex = try? NSRegularExpression(pattern: titlePattern, options: .caseInsensitive) {
-                    if let match = regex.firstMatch(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count)) {
-                        if let titleRange = Range(match.range(at: 1), in: html) {
-                            let title = String(html[titleRange])
-                            completion(.success(title))
-                        } else {
-                            completion(.failure(NSError(domain: "WeboffError", code: 404, userInfo: [NSLocalizedDescriptionKey: "Título não encontrado."])))
-                        }
-                    } else {
-                        completion(.failure(NSError(domain: "WeboffError", code: 405, userInfo: [NSLocalizedDescriptionKey: "Título não encontrado."])))
-                    }
+    private func downloadImages(from html: String) {
+        let pattern = "src=[\"'](http[s]?://[^\"']+\\.(jpg|jpeg|png|gif))[\"']"
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let matches = regex.matches(in: html, range: NSRange(location: 0, length: html.utf16.count))
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: html) {
+                    let imageLink = String(html[range])
+                    _ = downloadContent(from: imageLink) 
                 }
-            case .failure(let error):
-                completion(.failure(error))
             }
         }
+    }
+    
+    private func downloadVideos(from html: String) {
+        let pattern = "src=[\"'](http[s]?://[^\"']+\\.(mp4|mov|avi))[\"']"
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let matches = regex.matches(in: html, range: NSRange(location: 0, length: html.utf16.count))
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: html) {
+                    let videoLink = String(html[range])
+                    _ = downloadContent(from: videoLink) 
+                }
+            }
+        }
+    }
+    
+    private func downloadContent(from url: String) -> String? {
+        guard let url = URL(string: url) else { return nil }
+        let semaphore = DispatchSemaphore(value: 0)
+        var content: String?
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let data = data, let html = String(data: data, encoding: .utf8) {
+                content = html
+            }
+            semaphore.signal()
+        }.resume()
+        
+        semaphore.wait()
+        return content
+    }
+    
+    private func saveCSSContent(content: String, for url: String) {
+         guard let cacheDir = cacheDirectory else { return }
+        let filePath = cacheDir.appendingPathComponent(url.replacingOccurrences(of: "/", with: "_"))
+        do {
+            try content.write(to: filePath, atomically: true, encoding: .utf8)
+        } catch {}
+    }
+    
+    private func saveJavaScriptContent(content: String, for url: String) {
+          guard let cacheDir = cacheDirectory else { return }
+        let filePath = cacheDir.appendingPathComponent(url.replacingOccurrences(of: "/", with: "_"))
+        do {
+            try content.write(to: filePath, atomically: true, encoding: .utf8)
+        } catch {}
     }
 }
