@@ -26,8 +26,6 @@ import WEO
 import SwiftUI
 import WEO
 import WebKit
-
-@available(iOS 13.0, *)
 struct ContentView: View {
     @State private var urlText: String = ""
     @State private var isLoading: Bool = false
@@ -66,7 +64,7 @@ struct ContentView: View {
                         .padding()
                 }
             }
-            .navigationBarTitle("SwiftUI Browser")
+            .navigationBarTitle("WEO")
         }
     }
 
