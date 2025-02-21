@@ -19,3 +19,100 @@ import WEO
 ```
 
 #### (https://github.com/SAMISsw/Weboff)
+
+### Code for Example
+
+```swift
+import SwiftUI
+import WEO
+import WebKit
+
+@available(iOS 13.0, *)
+struct ContentView: View {
+    @State private var urlText: String = ""
+    @State private var isLoading: Bool = false
+    @State private var errorMessage: String? = nil
+    @State private var htmlContent: String? = nil
+    @State private var webOff = WEO()
+
+    var body: some View {
+        NavigationView {
+            VStack {
+                HStack {
+                    TextField("Enter URL", text: $urlText)
+                        .padding()
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    Button("Go") {
+                        loadWebsite(urlString: urlText)
+                    }
+                    .padding()
+                }
+                .padding()
+
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .padding()
+                }
+
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .padding()
+                }
+
+                if let htmlContent = htmlContent {
+                    WebView(htmlContent: htmlContent)
+                        .padding()
+                }
+            }
+            .navigationBarTitle("SwiftUI Browser")
+        }
+    }
+
+    func loadWebsite(urlString: String) {
+        guard let url = URL(string: urlString) else {
+            self.errorMessage = "URL inválido"
+            return
+        }
+
+        self.isLoading = true
+        self.errorMessage = nil
+
+        webOff.deepHTMLScan(url: url) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let html):
+                    self.htmlContent = html
+                case .failure(let error):
+                    self.errorMessage = "Erro ao carregar site: \(error.localizedDescription)"
+                }
+                self.isLoading = false
+            }
+        }
+    }
+}
+
+struct WebView: View {
+    var htmlContent: String
+
+    var body: some View {
+        WebViewRepresentable(htmlContent: htmlContent)
+            .edgesIgnoringSafeArea(.all)
+    }
+}
+
+struct WebViewRepresentable: UIViewRepresentable {
+    var htmlContent: String
+
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.loadHTMLString(htmlContent, baseURL: nil)
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        uiView.loadHTMLString(htmlContent, baseURL: nil)
+    }
+}
+```
