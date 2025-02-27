@@ -4,8 +4,8 @@ import Foundation
 public class WEO {
     private let cacheDirectory: URL?
     private var totalDownloaded: Int64 = 0
-    private let maxDownloadSize: Int64 = 3_380_000_000 // 3.38 GB
-    private let slowDownThreshold: Int64 = 800_000_000 // 800 MB
+    private let maxDownloadSize: Int64 = 3_380_000_000 
+    private let slowDownThreshold: Int64 = 800_000_000 
 
     public init() {
         cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
