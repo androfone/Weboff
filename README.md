@@ -143,7 +143,7 @@ class BrowserViewModel: ObservableObject {
     @Published var textMode = false
     @Published var savedPages = [String: String]()
     @Published var videoURL: URL?
-    @Published var mediaFiles = [String: String]()
+    @Published var mediaFiles = [String: MediaData]()
 
     private var webView: WKWebView?
     private var monitor = NWPathMonitor()
@@ -263,8 +263,8 @@ class BrowserViewModel: ObservableObject {
                 downloadFile(from: url) { success in
                     if success {
                         let fileName = url.lastPathComponent
-                        self.mediaFiles[fileName] = url.absoluteString
-                        UserDefaults.standard.set(self.mediaFiles, forKey: "MediaFiles")
+                        let mediaData = MediaData(fileName: fileName, filePath: self.getDocumentsDirectory().appendingPathComponent(fileName).path)
+                        self.mediaFiles[fileName] = mediaData
                     }
                 }
             }
@@ -272,39 +272,45 @@ class BrowserViewModel: ObservableObject {
     }
 
     func downloadFile(from url: URL, completion: @escaping (Bool) -> Void) {
-        let task = URLSession.shared.downloadTask(with: url) { (location, response, error) in
-            if let location = location {
-                do {
-                    let data = try Data(contentsOf: location)
-                    let fileURL = self.getDocumentsDirectory().appendingPathComponent(url.lastPathComponent)
-                    try data.write(to: fileURL)
-                    completion(true)
-                } catch {
-                    completion(false)
-                }
-            } else {
+        let downloadTask = URLSession.shared.downloadTask(with: url) { (url, response, error) in
+            guard let url = url, error == nil else {
+                completion(false)
+                return
+            }
+
+            do {
+                let destinationURL = self.getDocumentsDirectory().appendingPathComponent(url.lastPathComponent)
+                try FileManager.default.moveItem(at: url, to: destinationURL)
+                completion(true)
+            } catch {
                 completion(false)
             }
         }
-        task.resume()
+        downloadTask.resume()
     }
 
     func getDocumentsDirectory() -> URL {
         let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
         return paths[0]
     }
+}
 
-    func expandCacheWithOfflineContent() {
-        if let url = currentURL?.absoluteString {
-            if let savedHTML = UserDefaults.standard.string(forKey: url) {
-                offlineHTML = savedHTML
-            }
-        }
-    }
+struct MediaData {
+    var fileName: String
+    var filePath: String
+}
 
-    func deleteOfflineCache() {
-        if let url = currentURL?.absoluteString {
-            UserDefaults.standard.removeObject(forKey: url)
+struct VideoPlayerView: View {
+    var url: URL
+
+    var body: some View {
+        VStack {
+            VideoPlayer(player: AVPlayer(url: url))
+                .frame(height: 250)
+                .onAppear {
+                    let player = AVPlayer(url: url)
+                    player.play()
+                }
         }
     }
 }
